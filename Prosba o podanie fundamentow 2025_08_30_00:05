@@ -1,0 +1,356 @@
+Dobra — poniżej daję pełne treści plików z Działu 1 (Fundamenty i kontrakt), gotowe do skopiowania do repo. Zawiera:
+
+README.md — krótki opis + szybki start,
+
+requirements.txt — minimalna lista (u Ciebie środowisko ma więcej; te to must-have),
+
+config/default_config.json — domyślne parametry (interwały, rolling window, signals, training),
+
+docs/CODING_STANDARDS.md — zasady kodu, aliasy, prompt dla agenta,
+
+docs/MODEL_META_SCHEMA.json — schema pliku meta modelu (walidacja).
+
+
+Skopiuj każdy plik do odpowiedniej ścieżki w repo (config/, docs/).
+
+
+---
+
+README.md
+
+# Trading-ML-Project
+
+Projekt: trenowanie i predykcja modeli LightGBM na danych z Binance (REST + WebSocket).
+Cechy projektu:
+- Rolling-window training z checkpointingiem (co 1000 wierszy).
+- Sygnały tradingowe (z `sygnaly.py`) wyliczane i dołączane jako cechy (0–100%).
+- Predykcja real-time (RT) z warunkiem zgodności `features_hash` między treningiem a inferencją.
+- GUI: Dash (zakładki: Models, Training, Prediction, Validation, Logs).
+- Modele: zapisywane lokalnie jako `.joblib` + `.meta.json` (nie commitujemy do Git).
+
+## Szybki start (dev)
+1. Sklonuj repo:
+   ```bash
+   git clone <repo_url>
+   cd trading-ml-project
+
+2. Stwórz wirtualne środowisko i zainstaluj wymagania:
+
+python -m venv .venv
+source .venv/bin/activate    # linux/mac
+pip install -r requirements.txt
+
+
+3. Sprawdź konfigurację:
+
+config/default_config.json — domyślne ustawienia (interwały, rolling_window, signals).
+
+Skopiuj config/user_config.json i dostosuj lokalnie jeśli potrzebujesz.
+
+
+
+4. Uruchom sanity checks:
+
+bash scripts/check_precommit.sh
+
+
+5. Uruchom aplikację Dash (dev):
+
+python -m src.gui.dash_app
+
+
+
+Gdzie co się znajduje
+
+config/ – konfiguracje (default + user)
+
+docs/ – standardy, schema modelu, architektura
+
+src/ – kod źródłowy (data, features, training, prediction, gui, utils)
+
+scripts/ – skrypty pomocnicze (walidacja cech, sanity checks)
+
+models/, metrics/, logs/ – katalogi runtime (w repo znajdują się puste .gitkeep)
+
+
+Ważne zasady współpracy
+
+Przed każdą zmianą w pipeline features uruchom scripts/validate_features.py.
+
+Nie dodawaj nowych zależności bez zgody właściciela projektu.
+
+Wklej SYSTEM PROMPT (z docs/CODING_STANDARDS.md) jako pierwszą wiadomość do dowolnego agenta AI pracującego nad repo.
+
+
+Kontakt / Onboarding
+
+Przeczytaj docs/CODING_STANDARDS.md i docs/CONTRIBUTING.md przed pracą z kodem.
+
+
+---
+
+# `requirements.txt`
+```text
+# Minimalne biblioteki wymagane do uruchomienia podstawowych modułów.
+# Twoje środowisko zawiera już pełną listę — te pozycje to MUST-HAVE.
+
+pandas>=2.0
+numpy>=2.0
+lightgbm>=3.3
+scikit-learn>=1.0
+joblib>=1.0
+ccxt>=4.0
+websocket-client>=1.0
+dash>=2.6
+plotly>=5.0
+psutil>=5.0
+python-json-logger>=2.0
+requests>=2.0
+
+> Uwaga: używaj głównej, kompletnej listy bibliotek, którą już masz w środowisku (nie dodawaj nowych pakietów bez zgody).
+
+
+
+
+---
+
+config/default_config.json
+
+{
+  "pair": "BTCUSDT",
+  "interval": "1h",
+  "update_interval": "1m",
+  "rolling_window": 5000,
+  "buffers": {
+    "warmup_bars": 500,
+    "history_windows": {
+      "backwards": 2,
+      "current": 1,
+      "forwards": 2
+    }
+  },
+  "signals_config": {
+    "source": "src/sygnaly.py",
+    "use": [
+      "SMA Cross LT",
+      "RSI Bull Div",
+      "Donchian 20 + Vol"
+    ],
+    "probability": {
+      "formula": "p = clip(score/thr, 0, 1) * 100",
+      "clip_min": 0.0,
+      "clip_max": 100.0
+    }
+  },
+  "features": {
+    "base": ["open", "high", "low", "close", "volume"],
+    "include_indicators": true,
+    "signals_as_prob": true,
+    "include_lags": {
+      "close": [1, 2, 3]
+    }
+  },
+  "targets": {
+    "open_next": {"type": "regression", "horizon": 1},
+    "volume_state": {"type": "multiclass", "classes": ["skupowanie", "sprzedawanie", "kumulacja", "stagnacja"]},
+    "market_state": {"type": "multiclass", "classes": ["kupuj", "trzymaj", "sprzedaj", "nie_kupuj"]}
+  },
+  "training": {
+    "checkpoint_every_rows": 1000,
+    "early_stopping_rounds": 200,
+    "metrics_csv_dir": "metrics/",
+    "model_dir": "models/",
+    "max_missing_ratio": 0.01
+  },
+  "validation": {
+    "strict_time_sync": true,
+    "retries_on_data_gap": 3,
+    "max_retry_delay_seconds": 60
+  },
+  "logging": {
+    "log_dir": "logs/",
+    "log_level": "INFO"
+  }
+}
+
+
+---
+
+docs/CODING_STANDARDS.md
+
+# CODING_STANDARDS.md
+
+Ten dokument jest "źródłem prawdy" dla stylu i konwencji w projekcie. 
+Każdy dev/agent AI musi się stosować do poniższych zasad.
+
+## 1. Język i wersja
+- Python 3.11+ compatible.
+
+## 2. Importy (obowiązkowe aliasy)
+Zawsze używaj poniższych aliasów tam, gdzie to dotyczy:
+```py
+import numpy as np
+import pandas as pd
+import joblib
+import hashlib, json, os, time
+import lightgbm as lgb
+from dash import Dash, dcc, html, Input, Output
+import plotly.express as px
+
+3. Styl kodu
+
+PEP8 (używaj pylint do kontroli).
+
+Funkcje: snake_case.
+
+Klasy: CamelCase.
+
+Docstringi: styl Google:
+
+
+def my_function(arg1, arg2):
+    """Short summary.
+
+    Args:
+        arg1 (int): description.
+        arg2 (str): description.
+
+    Returns:
+        bool: description.
+    """
+
+4. Nazewnictwo plików i artefaktów
+
+Model: {PAIR}__{INTERVAL}__{TARGET}__v{VERSION}.joblib
+
+e.g. BTCUSDT__1h__target_open_next__v1.joblib
+
+
+Meta: {model_id}.meta.json
+
+Checkpoint: {model_id}__ckpt_rows_{N}.joblib
+
+Metrics CSV: metrics/{model_id}__metrics.csv
+
+Logi JSON: logs/{model_id}__YYYYMMDDTHHMMSS.json
+
+
+5. Sygnały -> nazwy cech
+
+SIG_<slug>_prob_long, SIG_<slug>_prob_short
+
+slug: lowercase, spaces -> _, remove special chars
+
+"SMA Cross LT" -> sma_cross_lt
+
+
+
+6. Feature hash
+
+Używamy compute_features_hash(feature_list, indicators_config, signals_config, interval, update_interval, timezone)
+
+Hash zapisujemy w model.meta.json jako features_hash.
+
+Predykcja RT nie startuje jeśli current_features_hash != model.features_hash.
+
+
+7. Logowanie i statusy
+
+Logowanie w JSON z polami:
+
+timestamp, model_id, status, message, iteration, rows_used, metric_snapshot
+
+
+Statusy:
+
+PENDING, RUNNING, PAUSED_USER, PAUSED_DATA, PAUSED_SYNC, PAUSED_ERROR, STOPPED, INTERRUPTED, COMPLETED, CHECKPOINT
+
+
+8. System prompt dla agentów AI
+
+Każdy agent musi otrzymać ten prompt jako pierwsze polecenie:
+
+SYSTEM PROMPT (OBOWIĄZKOWY):
+Jesteś asystentem pracującym nad projektem treningu LightGBM na danych Binance.
+Musisz bezwzględnie przestrzegać reguł z CODING_STANDARDS.md i config/default_config.json.
+- Używaj aliasów: import plotly.express as px, from dash import Dash, dcc, html, Input, Output.
+- Zanim zmienisz pipeline features uruchom scripts/validate_features.py.
+- Nie dodawaj zależności bez zgody.
+- Formatuj odpowiedzi: 1) Co zrobiłem, 2) zmienione pliki, 3) komendy do testów.
+
+9. Testy
+
+Każda zmiana w sygnaly.py lub features.py wymaga testu w tests/test_signals.py lub tests/test_features.py.
+
+
+10. PR / Commit
+
+Commit message style:
+
+feat(...), fix(...), docs(...)
+
+
+W opisie PR: krótkie wyjaśnienie, pliki zmienione, jak testować.
+
+
+
+---
+
+---
+
+# `docs/MODEL_META_SCHEMA.json`
+```json
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Model Meta Schema",
+  "type": "object",
+  "required": [
+    "model_id",
+    "pair",
+    "interval",
+    "update_interval",
+    "target",
+    "version",
+    "first_training_date",
+    "training_start_date",
+    "training_end_date",
+    "features_hash",
+    "feature_list",
+    "lightgbm_params"
+  ],
+  "properties": {
+    "model_id": {"type": "string"},
+    "pair": {"type": "string"},
+    "interval": {"type": "string"},
+    "update_interval": {"type": "string"},
+    "target": {"type": "string"},
+    "version": {"type": "integer"},
+    "first_training_date": {"type": "string", "format": "date"},
+    "training_start_date": {"type": "string", "format": "date"},
+    "training_end_date": {"type": "string", "format": "date"},
+    "features_hash": {"type": "string"},
+    "feature_list": {
+      "type": "array",
+      "items": {"type": "string"}
+    },
+    "indicators_config": {"type": ["object", "null"]},
+    "signals_config": {"type": ["object", "null"]},
+    "lightgbm_params": {"type": "object"},
+    "best_iteration": {"type": ["integer", "null"]},
+    "metrics_snapshot": {"type": ["object", "null"]}
+  },
+  "additionalProperties": false
+}
+
+
+---
+
+Jeżeli chcesz, od razu wygeneruję także:
+
+scripts/check_precommit.sh i scripts/validate_features.py (pełny kod),
+
+pustą strukturę katalogów i .gitignore (jeśli chcesz, wkleję gotowy .gitignore).
+
+
+Który z tych kroków generujemy teraz?
+

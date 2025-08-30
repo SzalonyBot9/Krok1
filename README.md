@@ -1,1 +1,5 @@
-bbhbbbh# Krok1
+#<<<<<<< Master
+#bbhbbbh# Krok1
+
+
+#>>>>>>> main
