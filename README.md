@@ -11,5 +11,5 @@ Cechy projektu:
 ## Szybki start (dev)
 1. Sklonuj repo:
    ```bash
-   git clone <repo_url>
+   git clone <https://github.com/SzalonyBot9/Krok1/tree/main>
    cd trading-ml-project
